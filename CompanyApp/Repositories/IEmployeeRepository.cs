@@ -13,6 +13,8 @@ namespace CompanyApp.Repositories
         Task DeleteAsync(int Id);
 
         Task<List<Department>> GetAllDepartments();
+        Task<List<Position>> GetAllPositions();
+        Task<List<City>> GetAllCities();
     }
 
 }

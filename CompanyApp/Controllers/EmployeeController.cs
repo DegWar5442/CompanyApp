@@ -1,12 +1,12 @@
-﻿using CompanyApp.Repositories;
+﻿using CompanyApp.Models;
+using CompanyApp.Repositories;
 using CompanyApp.ViewModels;
-using CompanyApp.Models; 
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Rendering;
-using Microsoft.EntityFrameworkCore; 
+using Microsoft.AspNetCore.Mvc.Rendering; 
+using Microsoft.EntityFrameworkCore;
 using System;
-using System.Linq; 
-using System.Threading.Tasks; 
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace CompanyApp.Controllers
 {
@@ -19,35 +19,31 @@ namespace CompanyApp.Controllers
             _employeeRepository = employeeRepository;
         }
 
-        public async Task<IActionResult> Index(string searchString, string sortOrder, string currentFilter)
+        // GET: Employee
+        public async Task<IActionResult> Index(string searchString, string sortOrder)
         {
+            
             ViewData["CurrentSort"] = sortOrder;
             ViewData["NameSortParam"] = string.IsNullOrEmpty(sortOrder) ? "name_desc" : "";
             ViewData["BirthDateSortParm"] = sortOrder == "date_asc" ? "date_desc" : "date_asc";
+            ViewData["CurrentFilter"] = searchString; 
 
-            if (searchString != null)
-            {
-                ViewData["CurrentFilter"] = searchString;
-            }
-            else
-            {
-                searchString = currentFilter;
-                ViewData["CurrentFilter"] = currentFilter;
-            }
-
+         
             var employeesQuery = _employeeRepository.GetAllAsync();
 
+           
             if (!string.IsNullOrEmpty(searchString))
             {
-                employeesQuery = employeesQuery.Where(e => e.FirstName.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
-                                                           e.LastName.Contains(searchString, StringComparison.OrdinalIgnoreCase));
+                employeesQuery = employeesQuery.Where(e => e.FirstName.Contains(searchString)
+                                                        || e.LastName.Contains(searchString)
+                                                        || (e.MiddleName != null && e.MiddleName.Contains(searchString)));
             }
 
-           
+            // Apply sorting
             switch (sortOrder)
             {
                 case "name_desc":
-                    employeesQuery = employeesQuery.OrderByDescending(e => e.LastName);
+                    employeesQuery = employeesQuery.OrderByDescending(e => e.FirstName);
                     break;
                 case "date_asc":
                     employeesQuery = employeesQuery.OrderBy(s => s.BirthDate);
@@ -55,116 +51,110 @@ namespace CompanyApp.Controllers
                 case "date_desc":
                     employeesQuery = employeesQuery.OrderByDescending(s => s.BirthDate);
                     break;
-                default: 
-                    employeesQuery = employeesQuery.OrderBy(e => e.LastName);
+                default:
+                    employeesQuery = employeesQuery.OrderBy(e => e.FirstName); 
                     break;
             }
 
+           
+            var employeeViewModels = await employeesQuery.ToListAsync(); 
 
-            var employees = await employeesQuery.ToListAsync();
-
-         
-            var employeeViewModels = employees.Select(e => new EmployeeViewModel
-            {
-                EmployeeId = e.Id,
-                FirstName = e.FirstName,
-                LastName = e.LastName,
-                MiddleName = e.MiddleName,
-                Phone = e.Phone,
-                BirthDate = e.BirthDate,
-                HireDate = e.HireDate,
-                Salary = e.Salary,
-          
-                DepartmentId = e.DepartmentId,
-                DepartmentName = e.Department.Name,
-                PositionId = e.PositionId,
-                PositionName = e.Position.Name,
-              
-                CityId = e.Address.CityId,
-                CityName = e.Address.City.Name,
-                StreetName = e.Address.StreetName,
-                BuildingNumber = e.Address.BuildingNumber,
-                ApartmentNumber = e.Address?.ApartmentNumber,
-               
-            }).ToList();
-
-       
             var viewModel = new EmployeeListViewModel
             {
-                
                 Employees = employeeViewModels
             };
 
             return View(viewModel);
         }
 
-
-        //GET: Employee/Add
+        // GET: Employee/Add
         [HttpGet]
         public async Task<IActionResult> Add()
         {
-            var departments = await _employeeRepository.GetAllDepartments();
-            ViewBag.Departments = new SelectList(departments, "Id", "Name"); 
-            
-
-            return View();
+            var viewModel = new EmployeeViewModel
+            {
+                AvailableDepartments = await _employeeRepository.GetAllDepartments(),
+                AvailablePositions = await _employeeRepository.GetAllPositions(),
+                AvailableCities = await _employeeRepository.GetAllCities()
+            };
+            return View(viewModel);
         }
 
-        //POST: Employee/Add
+        // POST: Employee/Add
         [HttpPost]
+        [ValidateAntiForgeryToken] // Always good practice for POST methods
         public async Task<IActionResult> Add(EmployeeViewModel model)
         {
             if (!ModelState.IsValid)
             {
-               
-                var departments = await _employeeRepository.GetAllDepartments();
-                ViewBag.Departments = new SelectList(departments, "Id", "Name", model.DepartmentId);
-             
+                
+                model.AvailableDepartments = await _employeeRepository.GetAllDepartments();
+                model.AvailablePositions = await _employeeRepository.GetAllPositions();
+                model.AvailableCities = await _employeeRepository.GetAllCities();
                 return View(model);
             }
 
             await _employeeRepository.AddAsync(model);
-            return RedirectToAction("Index", "Employee");
+            return RedirectToAction("Index"); 
         }
 
-
-        //GET: Employee/Edit
+        // GET: Employee/Edit/5
         [HttpGet]
         public async Task<IActionResult> Edit(int id)
         {
-            var departments = await _employeeRepository.GetAllDepartments();
-            ViewBag.Departments = new SelectList(departments, "Id", "Name"); 
-
-           
-
-
             var employee = await _employeeRepository.GetByIdAsync(id);
             if (employee == null)
             {
-                return NotFound(); 
+                return NotFound();
             }
 
-           
-            ViewBag.Departments = new SelectList(departments, "Id", "Name", employee.DepartmentId);
-        
+            
+            employee.AvailableDepartments = await _employeeRepository.GetAllDepartments();
+            employee.AvailablePositions = await _employeeRepository.GetAllPositions();
+            employee.AvailableCities = await _employeeRepository.GetAllCities();
+
             return View(employee);
         }
 
-        //POST: Employee/Edit
+        // POST: Employee/Edit
         [HttpPost]
-        public async Task<IActionResult> Edit(EmployeeViewModel employee)
+        [ValidateAntiForgeryToken] 
+        public async Task<IActionResult> Edit(EmployeeViewModel employeeViewModel)
         {
+         
+
             if (!ModelState.IsValid)
             {
                 
-                var departments = await _employeeRepository.GetAllDepartments();
-                ViewBag.Departments = new SelectList(departments, "Id", "Name", employee.DepartmentId);
-              
-                return View(employee);
+                employeeViewModel.AvailableDepartments = await _employeeRepository.GetAllDepartments();
+                employeeViewModel.AvailablePositions = await _employeeRepository.GetAllPositions();
+                employeeViewModel.AvailableCities = await _employeeRepository.GetAllCities();
+                return View(employeeViewModel);
             }
 
-            await _employeeRepository.UpdateAsync(employee);
-            return RedirectToAction("Index", "Employee");
+            await _employeeRepository.UpdateAsync(employeeViewModel);
+            return RedirectToAction("Index");
+        }
+
+        // GET: Employee/Delete/5 (Confirmation Page)
+        [HttpGet]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var employee = await _employeeRepository.GetByIdAsync(id);
+            if (employee == null)
+            {
+                return NotFound();
+            }
+            return View(employee); 
+        }
+
+        // POST: Employee/Delete/5 (Actual Deletion)
+        [HttpPost, ActionName("Delete")] 
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> DeleteConfirmed(int id)
+        {
+            await _employeeRepository.DeleteAsync(id);
+            return RedirectToAction("Index");
         }
     }
 }
